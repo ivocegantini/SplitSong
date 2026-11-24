@@ -27,6 +27,10 @@ function Fail($msg) { Write-Host "`nErro: $msg" -ForegroundColor Red; exit 1 }
 $VenvPy = Join-Path '.venv' 'Scripts\python.exe'
 if (Test-Path $VenvPy) {
     $Py = @($VenvPy)
+} elseif ($env:pythonLocation -and (Test-Path (Join-Path $env:pythonLocation 'python.exe'))) {
+    # No GitHub Actions: o Python do actions/setup-python (o 'py -3' pegaria
+    # a versão mais nova instalada na imagem do runner, não a escolhida).
+    $Py = @(Join-Path $env:pythonLocation 'python.exe')
 } elseif (Get-Command py -ErrorAction SilentlyContinue) {
     $Py = @('py', '-3')
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
@@ -52,6 +56,10 @@ if ($ffmpeg -and $ffprobe) {
 }
 Write-Host ''
 
-$Verbosity = if ($Resumido) { @() } else { @('-v') }
-& $PyExe @PyArgs -m unittest discover -s tests @Verbosity @Extra
+# Lista explícita: '$x = if (...) { @('-v') }' vira uma string solta e o
+# splatting dela não é confiável; aqui todos os argumentos são [string[]].
+[string[]]$UnitArgs = $PyArgs + @('-m', 'unittest', 'discover', '-s', 'tests')
+if (-not $Resumido) { $UnitArgs += '-v' }
+if ($Extra) { $UnitArgs += $Extra }
+& $PyExe $UnitArgs
 exit $LASTEXITCODE
