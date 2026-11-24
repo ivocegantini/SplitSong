@@ -227,3 +227,6 @@ __marimo__/
 
 # SplitSong: executável compilado e dados do programa (.env, Input, Temp, Output, MP3)
 bin/
+
+# pacotes gerados pelo build_deb.sh
+release/

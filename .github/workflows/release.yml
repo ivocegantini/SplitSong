@@ -3,7 +3,7 @@
 # A versão vem só do __version__ do split_songs.py. Para lançar uma versão,
 # mude a constante e faça push na main: se a tag v<versão> ainda não existir,
 # o workflow roda os testes (tests.yml), compila os executáveis de Linux e
-# Windows, cria a tag e o release.
+# Windows, gera o .deb, cria a tag e o release.
 # Se a tag já existir, nada é feito (pushes sem mudança de versão são ignorados).
 #
 # Também pode ser disparado à mão: Actions > Release > Run workflow,
@@ -134,6 +134,28 @@ jobs:
             tar -czf "release/SplitSong-$TAG-linux-x64.tar.gz" -C dist SplitSong
           fi
           ls -l release
+
+      - name: Gerar o .deb (Linux)
+        if: runner.os == 'Linux'
+        env:
+          DEB_MAINTAINER: ${{ github.repository_owner }} <${{ github.repository_owner }}@users.noreply.github.com>
+          DEB_HOMEPAGE: ${{ github.server_url }}/${{ github.repository }}
+        run: ./build_deb.sh release
+
+      # Instala o pacote de verdade (o apt resolve o Depends, ex.: ffmpeg)
+      # e confere o comando splitsong.
+      - name: Testar o .deb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ./release/*.deb
+          OUT=$(splitsong --version)
+          echo "$OUT"
+          [ "$OUT" = "SplitSong ${{ needs.version.outputs.version }}" ] \
+            || { echo "::error::o splitsong instalado informa '$OUT'"; exit 1; }
+          [ -d "$HOME/SplitSong/Input" ] && [ -f "$HOME/SplitSong/.env" ] \
+            || { echo "::error::o splitsong não criou ~/SplitSong"; exit 1; }
+          sudo apt-get remove -y splitsong
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

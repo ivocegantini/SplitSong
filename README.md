@@ -203,6 +203,17 @@ Gera um executável único com o PyInstaller, copiado para `bin/`. O executável
 
 O PyInstaller não faz compilação cruzada: gere o executável de cada sistema nele mesmo. O executável usa os mesmos comandos, trocando `python split_songs.py` por `SplitSong`.
 
+### Pacote .deb (Debian/Ubuntu)
+
+Cada release traz também um `.deb`, que instala o executável e o `ffmpeg` (e recomenda o `yt-dlp`):
+
+```bash
+sudo apt install ./SplitSong-v1.0.0-linux-amd64.deb
+splitsong --detect         # o mesmo que SplitSong / python split_songs.py
+```
+
+O comando `splitsong` usa `~/SplitSong` como pasta de dados (ou a do `SPLITSONG_HOME`): na primeira execução cria ali as pastas `Input`, `Temp` e `Output` e o `.env` (copiado do exemplo, legível só pelo dono). Um `--base-dir` na linha de comando continua valendo. Para gerar o pacote localmente, depois do `./build.sh`: `./build_deb.sh` → `release/SplitSong-v<versão>-linux-amd64.deb`.
+
 ## Testes
 
 Os testes ficam em [tests/](tests/) e usam só a biblioteca padrão (`unittest`):
@@ -226,4 +237,4 @@ A versão fica só no `__version__` do [split_songs.py](split_songs.py). Para la
 1. Mude o `__version__` (ex.: `"1.1.0"`; `"1.1.0-rc1"` sai como pré-release).
 2. Faça commit e push na `main`.
 
-O workflow [release.yml](.github/workflows/release.yml) lê a constante e, se a tag `v<versão>` ainda não existir, roda os testes, compila o executável de Linux e de Windows no GitHub Actions, confere o `--version` de cada um, cria a tag e publica o release com os dois arquivos, o `SHA256SUMS.txt` e as notas geradas a partir dos commits. Para conferir um download: `sha256sum -c --ignore-missing SHA256SUMS.txt` (no Windows: `Get-FileHash SplitSong-*.exe`). Pushes que não mudam a versão não geram release. Para disparar à mão: *Actions → Release → Run workflow*, ou `gh workflow run release.yml`.
+O workflow [release.yml](.github/workflows/release.yml) lê a constante e, se a tag `v<versão>` ainda não existir, roda os testes, compila o executável de Linux e de Windows no GitHub Actions, confere o `--version` de cada um, gera o `.deb` e testa a instalação dele, cria a tag e publica o release com o executável de Linux (`.tar.gz`), o `.deb`, o `.exe`, o `SHA256SUMS.txt` e as notas geradas a partir dos commits. Para conferir um download: `sha256sum -c --ignore-missing SHA256SUMS.txt` (no Windows: `Get-FileHash SplitSong-*.exe`). Pushes que não mudam a versão não geram release. Para disparar à mão: *Actions → Release → Run workflow*, ou `gh workflow run release.yml`.
