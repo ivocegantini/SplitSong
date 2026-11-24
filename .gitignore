@@ -1,3 +1,6 @@
+#Pasta de testes
+bin/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -221,3 +224,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# SplitSong: executável compilado e dados do programa (.env, Input, Temp, Output, MP3)
+bin/

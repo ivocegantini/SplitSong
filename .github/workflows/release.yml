@@ -1,0 +1,177 @@
+# Publica um release do SplitSong no GitHub.
+#
+# A versão vem só do __version__ do split_songs.py. Para lançar uma versão,
+# mude a constante e faça push na main: se a tag v<versão> ainda não existir,
+# o workflow roda os testes (tests.yml), compila os executáveis de Linux e
+# Windows, cria a tag e o release.
+# Se a tag já existir, nada é feito (pushes sem mudança de versão são ignorados).
+#
+# Também pode ser disparado à mão: Actions > Release > Run workflow,
+# ou: gh workflow run release.yml
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [split_songs.py]
+  workflow_dispatch:
+
+# Por padrão o token só lê o repositório; só o job "release" recebe escrita.
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Ler a versão
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      exists: ${{ steps.tag.outputs.exists }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Ler __version__ do split_songs.py
+        id: read
+        run: |
+          VERSION=$(python3 - <<'EOF'
+          import re, sys
+          src = open("split_songs.py", encoding="utf-8").read()
+          m = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', src, re.M)
+          if not m:
+              sys.exit("__version__ não encontrado no split_songs.py")
+          v = m.group(1)
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:[-.]?(?:a|b|rc|alpha|beta)\.?\d*)?", v):
+              sys.exit(f"versão inválida: {v!r} (use X.Y.Z, ex.: 1.2.0 ou 1.2.0-rc1)")
+          print(v)
+          EOF
+          )
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versão: $VERSION"
+
+      - name: Verificar se a tag já existe
+        id: tag
+        run: |
+          TAG="${{ steps.read.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::A tag $TAG já existe; nenhum release criado. Mude o __version__ no split_songs.py para lançar uma nova versão."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG ainda não existe; seguindo com o release."
+          fi
+
+  # Os mesmos testes do tests.yml; o build só começa se passarem.
+  tests:
+    name: Testes
+    needs: version
+    if: needs.version.outputs.exists == 'false'
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    name: Compilar (${{ matrix.os_name }})
+    needs: [version, tests]
+    if: needs.version.outputs.exists == 'false'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # 22.04 para o executável rodar também em distros com glibc mais antiga.
+          - os: ubuntu-22.04
+            os_name: linux
+          - os: windows-latest
+            os_name: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      # Os setup.* também instalam ffmpeg etc., que não são necessários para
+      # compilar; aqui só se cria o .venv com as versões fixadas no requirements.txt.
+      - name: Criar o .venv
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" -m pip install -r requirements.txt
+
+      - name: Compilar (Linux)
+        if: runner.os == 'Linux'
+        run: ./build.sh --sem-copia
+
+      - name: Compilar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./build.ps1 -SemCopia
+
+      - name: Conferir a versão do executável
+        shell: bash
+        run: |
+          EXE=dist/SplitSong; [ "$RUNNER_OS" = "Windows" ] && EXE=dist/SplitSong.exe
+          OUT=$("$EXE" --version)
+          echo "$OUT"
+          [ "$OUT" = "SplitSong ${{ needs.version.outputs.version }}" ] \
+            || { echo "::error::o executável informa '$OUT'"; exit 1; }
+
+      - name: Empacotar
+        shell: bash
+        run: |
+          TAG="${{ needs.version.outputs.tag }}"
+          mkdir -p release
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/SplitSong.exe "release/SplitSong-$TAG-windows-x64.exe"
+          else
+            # tar.gz preserva a permissão de execução.
+            tar -czf "release/SplitSong-$TAG-linux-x64.tar.gz" -C dist SplitSong
+          fi
+          ls -l release
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ matrix.os_name }}
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    name: Publicar o release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # criar a tag e o release
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+
+      # Permite ao usuário conferir o download: sha256sum -c SHA256SUMS.txt
+      - name: Gerar os checksums
+        run: |
+          cd release
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Criar a tag e o release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # 1.2.0-rc1, 1.2.0b2 etc. saem marcados como pré-release.
+          PRERELEASE=""
+          [[ "${TAG#v}" =~ [a-z] ]] && PRERELEASE="--prerelease"
+          gh release create "$TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "SplitSong $TAG" \
+            --generate-notes \
+            $PRERELEASE

@@ -1,0 +1,14 @@
+# Dependências Python do SplitSong (instaladas no .venv pelo setup.sh / setup.ps1
+# e pelo workflow de release). O split_songs.py em si só usa a biblioteca padrão.
+#
+# As versões são fixas para o build ser reproduzível e uma versão nova
+# comprometida não entrar sozinha. Para atualizar, troque o número aqui
+# (confira o changelog), rode o setup de novo e teste.
+
+# Gera o executável (python -m PyInstaller --onefile --name SplitSong split_songs.py)
+pyinstaller==6.22.3
+
+# Usado pelo --download quando o programa roda pelo fonte (python split_songs.py).
+# O extra [default] traz o yt-dlp-ejs, necessário para os desafios JS do YouTube.
+# O YouTube muda com frequência: se o download parar de funcionar, atualize esta versão.
+yt-dlp[default]==2026.10.26

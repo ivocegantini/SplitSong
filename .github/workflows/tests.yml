@@ -1,0 +1,66 @@
+# Roda os testes do SplitSong (tests/) no Linux e no Windows.
+#
+# Dispara em todo push e pull request e também é chamado pelo workflow de
+# release antes de compilar: um release só sai se os testes passarem.
+#
+# Localmente: ./test.sh (Linux) ou test.bat / .\test.ps1 (Windows)
+
+name: Testes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testes (${{ matrix.os_name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            os_name: linux
+          - os: windows-latest
+            os_name: windows
+    runs-on: ${{ matrix.os }}
+    env:
+      # Sem o ffmpeg os testes de integração falham em vez de serem pulados.
+      SPLITSONG_REQUIRE_FFMPEG: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Instalar o ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Instalar o ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Conferir o ffmpeg
+        shell: bash
+        run: |
+          ffmpeg -hide_banner -version | head -1
+          ffprobe -hide_banner -version | head -1
+
+      # Os mesmos scripts usados localmente.
+      - name: Rodar os testes (Linux)
+        if: runner.os == 'Linux'
+        run: ./test.sh --exigir-ffmpeg
+
+      - name: Rodar os testes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./test.ps1 -ExigirFfmpeg
